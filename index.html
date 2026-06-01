@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام تسجيل الحضور الذكي</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        
+        h1 {
+            color: #333;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 50px rgba(0,0,0,0.2);
+        }
+        
+        .card h2 {
+            color: #667eea;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        .feature-list {
+            list-style: none;
+            margin-top: 15px;
+        }
+        
+        .feature-list li {
+            padding: 10px 0;
+            color: #666;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .feature-list li:before {
+            content: "✓ ";
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-box {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #999;
+            margin-top: 5px;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎓 نظام تسجيل الحضور الذكي</h1>
+            <p class="subtitle">نظام متقدم يستخدم تقنية التعرف على الوجه والعين</p>
+        </header>
+        
+        <div class="main-content">
+            <!-- بطاقة التسجيل -->
+            <div class="card">
+                <h2>📝 تسجيل طالب جديد</h2>
+                <p>قم بتسجيل بيانات جديدة في النظام باستخدام صورة واضحة لوجهك</p>
+                
+                <ul class="feature-list">
+                    <li>التحقق التلقائي من جودة الصورة</li>
+                    <li>استخراج بصمة الوجه الفريدة</li>
+                    <li>تخزين آمن للبيانات</li>
+                </ul>
+                
+                <div class="btn-group">
+                    <a href="/register" class="btn btn-primary">ابدأ التسجيل</a>
+                </div>
+            </div>
+            
+            <!-- بطاقة تسجيل الحضور -->
+            <div class="card">
+                <h2>✓ تسجيل الحضور</h2>
+                <p>قم بتسجيل حضورك في المحاضرة باستخدام كاميرا الويب</p>
+                
+                <ul class="feature-list">
+                    <li>كشف الوجه والعين تلقائياً</li>
+                    <li>التحقق من حيوية الشخص</li>
+                    <li>تسجيل فوري وآمن</li>
+                </ul>
+                
+                <div class="btn-group">
+                    <a href="/attendance" class="btn btn-primary">ابدأ التسجيل</a>
+                </div>
+            </div>
+            
+            <!-- بطاقة التقارير -->
+            <div class="card">
+                <h2>📊 التقارير والإحصائيات</h2>
+                <p>عرض تقارير الحضور والإحصائيات التفصيلية</p>
+                
+                <ul class="feature-list">
+                    <li>تقارير حسب المحاضرة</li>
+                    <li>نسب الحضور والغياب</li>
+                    <li>تحليل السلوك والأنماط</li>
+                </ul>
+                
+                <div class="btn-group">
+                    <a href="/reports" class="btn btn-primary">عرض التقارير</a>
+                </div>
+            </div>
+            
+            <!-- بطاقة المعلومات -->
+            <div class="card">
+                <h2>ℹ️ معلومات النظام</h2>
+                <p>نظام متقدم لتسجيل الحضور البيومتري</p>
+                
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-value" id="encodings-count">0</div>
+                        <div class="stat-label">طالب مسجل</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="system-status">✓</div>
+                        <div class="stat-label">حالة النظام</div>
+                    </div>
+                </div>
+                
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="checkSystemHealth()">فحص النظام</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        async function checkSystemHealth() {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                
+                document.getElementById('encodings-count').textContent = data.loaded_encodings;
+                document.getElementById('system-status').textContent = 
+                    data.status === 'healthy' ? '✓ جيد' : '✗ خطأ';
+                
+                alert(`النظام يعمل بشكل جيد\nعدد البصمات المحملة: ${data.loaded_encodings}`);
+            } catch (error) {
+                alert('خطأ في فحص النظام: ' + error.message);
+            }
+        }
+        
+        // فحص صحة النظام عند التحميل
+        window.addEventListener('load', checkSystemHealth);
+    </script>
+</body>
+</html>

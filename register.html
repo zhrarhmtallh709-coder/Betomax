@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل طالب جديد</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 40px;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        input[type="text"],
+        input[type="email"],
+        input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .photo-preview {
+            width: 100%;
+            height: 200px;
+            background: #f5f5f5;
+            border: 2px dashed #ddd;
+            border-radius: 5px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        .photo-preview img {
+            max-width: 100%;
+            max-height: 100%;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            margin-top: 15px;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .back-link a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 تسجيل طالب جديد</h1>
+        
+        <form id="registerForm">
+            <div class="form-group">
+                <label for="studentId">معرف الطالب (الرقم الجامعي):</label>
+                <input type="text" id="studentId" name="student_id" required placeholder="مثال: STU2024001">
+            </div>
+            
+            <div class="form-group">
+                <label for="name">اسم الطالب:</label>
+                <input type="text" id="name" name="name" required placeholder="محمد أحمد علي">
+            </div>
+            
+            <div class="form-group">
+                <label for="email">البريد الإلكتروني:</label>
+                <input type="email" id="email" name="email" required placeholder="student@university.edu">
+            </div>
+            
+            <div class="form-group">
+                <label for="photo">صورة شخصية واضحة:</label>
+                <input type="file" id="photo" name="photo" accept="image/*" required>
+                <div class="photo-preview" id="photoPreview">
+                    <span style="color: #999;">معاينة الصورة</span>
+                </div>
+            </div>
+            
+            <button type="submit" id="submitBtn">تسجيل الطالب</button>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>جاري معالجة البيانات...</p>
+        </div>
+        
+        <div id="result" class="result"></div>
+        
+        <div class="back-link">
+            <a href="/">← العودة للصفحة الرئيسية</a>
+        </div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('registerForm');
+        const photoInput = document.getElementById('photo');
+        const photoPreview = document.getElementById('photoPreview');
+        const resultDiv = document.getElementById('result');
+        const loadingDiv = document.getElementById('loading');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        // معاينة الصورة
+        photoInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    photoPreview.innerHTML = `<img src="${event.target.result}" alt="معاينة الصورة">`;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+        
+        // إرسال النموذج
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            resultDiv.style.display = 'none';
+            loadingDiv.style.display = 'block';
+            submitBtn.disabled = true;
+            
+            const formData = new FormData(form);
+            
+            try {
+                const response = await fetch('/register', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                loadingDiv.style.display = 'none';
+                resultDiv.className = 'result ' + data.status;
+                resultDiv.textContent = data.message;
+                resultDiv.style.display = 'block';
+                
+                if (data.status === 'success') {
+                    form.reset();
+                    photoPreview.innerHTML = '<span style="color: #999;">معاينة الصورة</span>';
+                    
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                } else {
+                    submitBtn.disabled = false;
+                }
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'خطأ: ' + error.message;
+                resultDiv.style.display = 'block';
+                submitBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تسجيل الحضور</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 40px;
+            max-width: 600px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        
+        select, input[type="file"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+        
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .result.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .result.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .result-details {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid;
+            font-size: 14px;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            margin-top: 15px;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .back-link {
+            text-align: center;
+            margin-top: 20px;
+        }
+        
+        .back-link a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        
+        .back-link a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📸 تسجيل الحضور</h1>
+        
+        <form id="attendanceForm">
+            <div class="form-group">
+                <label for="lectureSelect">اختر المحاضرة:</label>
+                <select id="lectureSelect" name="lecture_id" required>
+                    <option value="">-- جاري التحميل --</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="photo">التقط صورة أو اختر صورة:</label>
+                <input type="file" id="photo" name="photo" accept="image/*" required>
+            </div>
+            
+            <div class="button-group">
+                <button type="submit" class="btn-primary" id="submitBtn">تسجيل الحضور</button>
+                <button type="button" class="btn-secondary" onclick="window.location.href='/'">رجوع</button>
+            </div>
+        </form>
+        
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>جاري معالجة الصورة...</p>
+        </div>
+        
+        <div id="result" class="result"></div>
+        
+        <div class="back-link">
+            <a href="/">← العودة للصفحة الرئيسية</a>
+        </div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('attendanceForm');
+        const lectureSelect = document.getElementById('lectureSelect');
+        const photoInput = document.getElementById('photo');
+        const resultDiv = document.getElementById('result');
+        const loadingDiv = document.getElementById('loading');
+        const submitBtn = document.getElementById('submitBtn');
+        
+        // تحميل المحاضرات
+        async function loadLectures() {
+            try {
+                const response = await fetch('/lectures');
+                const data = await response.json();
+                
+                if (data.status === 'success' && data.data.length > 0) {
+                    lectureSelect.innerHTML = '<option value="">-- اختر المحاضرة --</option>';
+                    
+                    data.data.forEach(lecture => {
+                        const option = document.createElement('option');
+                        option.value = lecture.id;
+                        option.textContent = `${lecture.course_name} - ${lecture.lecture_date} ${lecture.start_time}`;
+                        lectureSelect.appendChild(option);
+                    });
+                } else {
+                    lectureSelect.innerHTML = '<option value="">لا توجد محاضرات متاحة</option>';
+                }
+            } catch (error) {
+                console.error('خطأ في تحميل المحاضرات:', error);
+            }
+        }
+        
+        // إرسال النموذج
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            if (!photoInput.files.length) {
+                alert('يرجى اختيار صورة');
+                return;
+            }
+            
+            resultDiv.style.display = 'none';
+            loadingDiv.style.display = 'block';
+            submitBtn.disabled = true;
+            
+            const formData = new FormData(form);
+            
+            try {
+                const response = await fetch('/attendance', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                loadingDiv.style.display = 'none';
+                resultDiv.className = 'result ' + data.status;
+                
+                let resultHTML = data.message;
+                if (data.status === 'success') {
+                    resultHTML += `<div class="result-details">
+                        <strong>الاسم:</strong> ${data.student_name}<br>
+                        <strong>الثقة:</strong> ${data.confidence}%<br>
+                        <strong>معرف الطالب:</strong> ${data.student_id}
+                    </div>`;
+                }
+                
+                resultDiv.innerHTML = resultHTML;
+                resultDiv.style.display = 'block';
+                
+                if (data.status === 'success') {
+                    form.reset();
+                    setTimeout(() => {
+                        resultDiv.style.display = 'none';
+                    }, 3000);
+                }
+                
+                submitBtn.disabled = false;
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                resultDiv.className = 'result error';
+                resultDiv.textContent = 'خطأ: ' + error.message;
+                resultDiv.style.display = 'block';
+                submitBtn.disabled = false;
+            }
+        });
+        
+        // تحميل المحاضرات عند التحميل
+        window.addEventListener('load', loadLectures);
+    </script>
+</body>
+</html>
