@@ -1,13 +1,33 @@
+# -*- coding: utf-8 -*-
+"""
+تطبيق نظام تسجيل الحضور الذكي - النسخة المحسنة
+"""
+
 from flask import Flask, render_template, request, jsonify
-from datetime import datetime
+from flask_cors import CORS
+from datetime import datetime, timedelta
 import cv2
 import numpy as np
 import os
 import logging
 from functools import wraps
 
+# استيراد الوحدات المخصصة
 from config import Config
 from error_handler import register_error_handlers
+from utils.auth import init_jwt, require_auth, create_auth_token, hash_password, verify_password
+from utils.exceptions import (
+    AttendanceSystemException,
+    InvalidImageError,
+    FaceNotDetectedError,
+    FaceLivenessError,
+    DatabaseError,
+    AuthenticationError,
+    ValidationError
+)
+from utils.file_validation import FileValidator
+from utils.encryption import Encryption
+from utils.database_pool import DatabasePool
 from utils.face_recognition import extract_face_encoding, find_best_match
 from utils.eye_detection import check_eye_openness
 from utils.image_processing import preprocess_image, validate_image, detect_blur
@@ -21,41 +41,68 @@ from utils.database import (
     add_attendance_log
 )
 
-# إعداد السجلات
+# ============== إعداد السجلات ==============
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('attendance_system.log'),
+        logging.FileHandler('logs/attendance_system.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
-# إنشاء التطبيق
+# ============== إنشاء التطبيق ==============
+
 app = Flask(__name__)
 app.config.from_object(Config)
+
+# تفعيل CORS
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+
+# تهيئة JWT
+init_jwt(app)
+
+# تهيئة تجمع الاتصالات
+try:
+    DatabasePool.initialize(Config)
+except Exception as e:
+    logger.error(f"❌ فشل تهيئة تجمع الاتصالات: {str(e)}")
+    # سيكون هناك محاولة للاتصال المباشر كبديل
 
 # تسجيل معالجات الأخطاء
 register_error_handlers(app)
 
-# إنشاء مجلد الرفع إذا لم يكن موجوداً
+# إنشاء مجلدات مطلوبة
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs('logs', exist_ok=True)
 
-# تحميل بصمات الوجه عند بدء التطبيق
+# تهيئة التشفير
+try:
+    encryption = Encryption()
+except Exception as e:
+    logger.warning(f"⚠️  تحذير في تهيئة التشفير: {str(e)}")
+    encryption = None
+
+# ============== تحميل البيانات ==============
+
 logger.info("جاري تحميل بصمات الوجه...")
-known_face_encodings, known_face_names, student_ids = load_all_face_encodings()
-logger.info(f"تم تحميل {len(known_face_encodings)} بصمة وجه")
+try:
+    known_face_encodings, known_face_names, student_ids = load_all_face_encodings()
+    logger.info(f"✅ تم تحميل {len(known_face_encodings)} بصمة وجه")
+except Exception as e:
+    logger.error(f"❌ خطأ في تحميل البصمات: {str(e)}")
+    known_face_encodings, known_face_names, student_ids = [], [], []
+
+# ============== Decorators ==============
 
 def require_post(f):
-    """Decorator للتحقق من طريقة الطلب"""
+    """Decorator للتحقق من طريقة الطلب (POST)"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if request.method != 'POST':
-            return jsonify({
-                'status': 'error',
-                'message': 'هذا الطلب يتطلب POST'
-            }), 405
+            raise ValidationError('هذا الطلب يتطلب POST')
         return f(*args, **kwargs)
     return decorated_function
 
@@ -64,11 +111,53 @@ def log_request(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         ip_address = request.remote_addr
-        logger.info(f"طلب جديد من {ip_address} إلى {request.path}")
+        logger.info(f"📍 طلب جديد من {ip_address} إلى {request.path}")
         return f(*args, **kwargs)
     return decorated_function
 
-# ============== المسارات ==============
+# ============== المسارات - المصادقة ==============
+
+@app.route('/auth/login', methods=['POST'])
+def login():
+    """تسجيل دخول المستخدم"""
+    try:
+        data = request.get_json()
+        if not data:
+            raise ValidationError('يجب إرسال بيانات JSON')
+        
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        
+        if not username or not password:
+            raise ValidationError('اسم المستخدم وكلمة المرور مطلوبة')
+        
+        # التحقق من بيانات الدخول (يمكن تحسينها بقاعدة بيانات)
+        if username == 'admin' and password == 'admin':
+            access_token = create_auth_token(identity=username)
+            logger.info(f"✅ تسجيل دخول ناجح: {username}")
+            return jsonify({
+                'status': 'success',
+                'message': 'تم تسجيل الدخول بنجاح',
+                'access_token': access_token
+            }), 200
+        
+        logger.warning(f"❌ محاولة تسجيل دخول فاشلة: {username}")
+        raise AuthenticationError('بيانات دخول غير صحيحة')
+    
+    except AttendanceSystemException as e:
+        logger.warning(f"⚠️  خطأ مصادقة: {e.log_details}")
+        return jsonify({
+            'status': 'error',
+            'message': e.message
+        }), e.error_code
+    except Exception as e:
+        logger.error(f"❌ خطأ في تسجيل الدخول: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'خطأ غير متوقع في المصادقة'
+        }), 500
+
+# ============== المسارات - الصفحات ==============
 
 @app.route('/')
 def index():
@@ -77,7 +166,7 @@ def index():
         lectures = get_all_lectures()
         return render_template('index.html', lectures=lectures)
     except Exception as e:
-        logger.error(f"خطأ في الصفحة الرئيسية: {str(e)}")
+        logger.error(f"❌ خطأ في الصفحة الرئيسية: {str(e)}")
         return render_template('index.html', lectures=[])
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -92,59 +181,51 @@ def register():
             
             # التحقق من المدخلات
             if not all([student_id, student_name, email]):
-                logger.warning("محاولة تسجيل ببيانات ناقصة")
-                return jsonify({
-                    'status': 'error',
-                    'message': 'جميع الحقول مطلوبة'
-                }), 400
+                logger.warning("❌ محاولة تسجيل ببيانات ناقصة")
+                raise ValidationError('جميع الحقول مطلوبة')
             
             # التحقق من صيغة البريد الإلكتروني
-            if '@' not in email:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'صيغة البريد الإلكتروني غير صحيحة'
-                }), 400
+            if '@' not in email or '.' not in email:
+                raise ValidationError('صيغة البريد الإلكتروني غير صحيحة')
             
             file = request.files.get('photo')
             if not file:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'يرجى رفع صورة'
-                }), 400
+                raise ValidationError('يرجى رفع صورة')
+            
+            # التحقق من الملف
+            is_valid, message = FileValidator.validate_file(file)
+            if not is_valid:
+                logger.warning(f"❌ ملف غير صالح: {message}")
+                raise InvalidImageError(message)
             
             # قراءة الصورة
             file_content = file.read()
+            file.seek(0)
             nparr = np.frombuffer(file_content, np.uint8)
             image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
             
             if image is None:
-                logger.error("فشل في قراءة الصورة المرفوعة")
-                return jsonify({
-                    'status': 'error',
-                    'message': 'فشل في قراءة الصورة'
-                }), 400
+                logger.error("❌ فشل في قراءة الصورة المرفوعة")
+                raise InvalidImageError('فشل في قراءة الصورة')
             
             # التحقق من جودة الصورة
             validation = validate_image(image)
             if not validation['is_valid']:
-                logger.warning(f"الصورة غير صالحة: {validation['reason']}")
-                return jsonify({
-                    'status': 'error',
-                    'message': f"الصورة غير صالحة: {validation['reason']}"
-                }), 400
+                logger.warning(f"⚠️  الصورة غير صالحة: {validation['reason']}")
+                raise InvalidImageError(validation['reason'])
             
             # معالجة الصورة
             processed_image = preprocess_image(image)
+            if processed_image is None:
+                raise InvalidImageError('فشل في معالجة الصورة')
             
             # استخراج بصمة الوجه
             face_encoding = extract_face_encoding(processed_image)
-            
             if face_encoding is None:
-                logger.warning(f"لم يتم التعرف على وجه للطالب {student_id}")
-                return jsonify({
-                    'status': 'error',
-                    'message': 'لم يتمكن النظام من التعرف على الوجه. تأكد من أن وجهك واضح في الصورة'
-                }), 400
+                logger.warning(f"⚠️  لم يتم التعرف على وجه للطالب {student_id}")
+                raise FaceNotDetectedError(
+                    'لم يتمكن النظام من التعرف على الوجه. تأكد من أن وجهك واضح في الصورة'
+                )
             
             # حفظ الصورة
             filename = f"{student_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jpg"
@@ -157,7 +238,8 @@ def register():
                 student_name,
                 email,
                 face_encoding,
-                filename
+                filename,
+                encryption
             )
             
             if success:
@@ -165,30 +247,32 @@ def register():
                 global known_face_encodings, known_face_names, student_ids
                 known_face_encodings, known_face_names, student_ids = load_all_face_encodings()
                 
-                logger.info(f"تم تسجيل طالب جديد: {student_id}")
-                add_attendance_log(None, 'registration', f'تسجيل طالب جديد: {student_id}')
+                logger.info(f"✅ تم تسجيل طالب جديد: {student_id}")
+                add_attendance_log(None, 'registration', f'تسجيل طالب جديد: {student_id}', request.remote_addr)
                 
                 return jsonify({
                     'status': 'success',
                     'message': 'تم التسجيل بنجاح! يمكنك الآن تسجيل الحضور'
-                })
+                }), 200
             else:
-                logger.error(f"فشل حفظ البيانات للطالب {student_id}")
-                return jsonify({
-                    'status': 'error',
-                    'message': 'حدث خطأ في حفظ البيانات. يرجى المحاولة لاحقاً'
-                }), 500
+                raise DatabaseError('فشل حفظ البيانات')
         
-        except Exception as e:
-            logger.error(f"خطأ في تسجيل الطالب: {str(e)}")
+        except AttendanceSystemException as e:
+            logger.warning(f"⚠️  خطأ في التسجيل: {e.log_details}")
             return jsonify({
                 'status': 'error',
-                'message': f'خطأ: {str(e)}'
+                'message': e.message
+            }), e.error_code
+        except Exception as e:
+            logger.error(f"❌ خطأ غير متوقع في التسجيل: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'message': 'حدث خطأ في التسجيل. يرجى المحاولة لاحقاً'
             }), 500
     
     return render_template('register.html')
 
-@app.route('/attendance', methods=['POST'])
+@app.route('/attendance', methods=['GET', 'POST'])
 @require_post
 @log_request
 def attendance():
@@ -197,63 +281,53 @@ def attendance():
         lecture_id = request.form.get('lecture_id', '').strip()
         file = request.files.get('photo')
         
-        if not lecture_id or not file:
-            return jsonify({
-                'status': 'error',
-                'message': 'المحاضرة والصورة مطلوبة'
-            }), 400
+        if not lecture_id:
+            raise ValidationError('معرف المحاضرة مطلوب')
+        
+        if not file:
+            raise ValidationError('الصورة مطلوبة')
+        
+        # التحقق من الملف
+        is_valid, message = FileValidator.validate_file(file)
+        if not is_valid:
+            raise InvalidImageError(message)
         
         # قراءة الصورة
         file_content = file.read()
+        file.seek(0)
         nparr = np.frombuffer(file_content, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if image is None:
-            logger.error("فشل في قراءة الصورة")
-            return jsonify({
-                'status': 'error',
-                'message': 'فشل في قراءة الصورة'
-            }), 400
+            raise InvalidImageError('فشل في قراءة الصورة')
         
         # التحقق من جودة الصورة
         validation = validate_image(image)
         if not validation['is_valid']:
-            logger.warning(f"صورة الحضور غير صالحة: {validation['reason']}")
-            return jsonify({
-                'status': 'error',
-                'message': f"صورة غير صالحة: {validation['reason']}"
-            }), 400
+            logger.warning(f"⚠️  صورة الحضور غير صالحة: {validation['reason']}")
+            raise InvalidImageError(validation['reason'])
         
         # معالجة الصورة
         processed_image = preprocess_image(image)
+        if processed_image is None:
+            raise InvalidImageError('فشل في معالجة الصورة')
         
         # استخراج بصمة الوجه
         face_encoding = extract_face_encoding(processed_image)
-        
         if face_encoding is None:
-            logger.warning("لم يتم العثور على وجه في صورة الحضور")
-            return jsonify({
-                'status': 'error',
-                'message': 'لم يتم العثور على وجه في الصورة'
-            }), 400
+            logger.warning("⚠️  لم يتم العثور على وجه في صورة الحضور")
+            raise FaceNotDetectedError('لم يتم العثور على وجه في الصورة')
         
         # التحقق من حيوية الوجه (فتح العينين)
         is_alive = check_eye_openness(processed_image)
-        
         if not is_alive:
-            logger.warning("فشل اختبار الحيوية")
-            return jsonify({
-                'status': 'error',
-                'message': 'فشل اختبار الحيوية - تأكد من فتح عينيك'
-            }), 400
+            logger.warning("⚠️  فشل اختبار الحيوية")
+            raise FaceLivenessError('فشل اختبار الحيوية - تأكد من فتح عينيك')
         
         # البحث عن الطالب المطابق
         if not known_face_encodings:
-            logger.error("لا توجد بصمات مخزنة")
-            return jsonify({
-                'status': 'error',
-                'message': 'النظام لم يتم تسجيل أي طلاب بعد'
-            }), 400
+            logger.error("❌ لا توجد بصمات مخزنة")
+            raise DatabaseError('النظام لم يتم تسجيل أي طلاب بعد')
         
         best_match_index, best_distance = find_best_match(
             known_face_encodings,
@@ -262,9 +336,8 @@ def attendance():
         )
         
         if best_match_index == -1:
-            logger.warning("لم يتم العثور على طالب مطابق")
-            add_attendance_log(None, 'unrecognized', 'محاولة تسجيل حضور لشخص غير معروف')
-            
+            logger.warning("⚠️  لم يتم العثور على طالب مطابق")
+            add_attendance_log(None, 'unrecognized', 'محاولة تسجيل حضور لشخص غير معروف', request.remote_addr)
             return jsonify({
                 'status': 'error',
                 'message': 'لم يتم التعرف على هذا الطالب'
@@ -293,8 +366,8 @@ def attendance():
         success = save_attendance(attendance_record)
         
         if success:
-            logger.info(f"تم تسجيل حضور الطالب: {student_name} ({student_id})")
-            add_attendance_log(student_db_id, 'attendance', f'تسجيل حضور في المحاضرة {lecture_id}')
+            logger.info(f"✅ تم تسجيل حضور: {student_name} ({student_id})")
+            add_attendance_log(student_db_id, 'attendance', f'تسجيل حضور في المحاضرة {lecture_id}', request.remote_addr)
             
             return jsonify({
                 'status': 'success',
@@ -302,60 +375,58 @@ def attendance():
                 'student_name': student_name,
                 'student_id': student_id,
                 'confidence': round(confidence * 100, 2)
-            })
+            }), 200
         else:
-            logger.error("فشل حفظ تسجيل الحضور")
-            return jsonify({
-                'status': 'error',
-                'message': 'حدث خطأ في حفظ تسجيل الحضور'
-            }), 500
+            raise DatabaseError('فشل حفظ تسجيل الحضور')
     
-    except Exception as e:
-        logger.error(f"خطأ في تسجيل الحضور: {str(e)}")
+    except AttendanceSystemException as e:
+        logger.warning(f"⚠️  خطأ في تسجيل الحضور: {e.log_details}")
         return jsonify({
             'status': 'error',
-            'message': f'خطأ: {str(e)}'
+            'message': e.message
+        }), e.error_code
+    except Exception as e:
+        logger.error(f"❌ خطأ غير متوقع في تسجيل الحضور: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'حدث خطأ في تسجيل الحضور. يرجى المحاولة لاحقاً'
         }), 500
 
+@app.route('/attendance/form')
+def attendance_form():
+    """نموذج تسجيل الحضور"""
+    return render_template('attendance.html')
+
 @app.route('/reports')
+@require_auth
 @log_request
 def reports():
     """عرض تقارير الحضور"""
     try:
         lecture_id = request.args.get('lecture_id', '').strip()
+        page = request.args.get('page', 1, type=int)
         
         if not lecture_id:
-            return jsonify({
-                'status': 'error',
-                'message': 'معرف المحاضرة مطلوب'
-            }), 400
+            raise ValidationError('معرف المحاضرة مطلوب')
         
-        attendance_data = get_attendance_report(lecture_id)
-        
-        # تحويل التاريخ والساعة إلى نص
-        data_serializable = []
-        for record in attendance_data:
-            data_serializable.append({
-                'student_id': record['student_id'],
-                'name': record['name'],
-                'email': record['email'],
-                'check_in_time': record['check_in_time'].isoformat() if record['check_in_time'] else None,
-                'confidence_score': float(record['confidence_score']) if record['confidence_score'] else 0
-            })
-        
-        logger.info(f"تم جلب تقرير الحضور للمحاضرة {lecture_id}")
+        attendance_data = get_attendance_report(lecture_id, page=page)
         
         return jsonify({
             'status': 'success',
-            'data': data_serializable,
-            'count': len(data_serializable)
-        })
+            'data': attendance_data
+        }), 200
     
-    except Exception as e:
-        logger.error(f"خطأ في جلب التقارير: {str(e)}")
+    except AttendanceSystemException as e:
+        logger.warning(f"⚠️  خطأ في التقارير: {e.log_details}")
         return jsonify({
             'status': 'error',
-            'message': f'خطأ: {str(e)}'
+            'message': e.message
+        }), e.error_code
+    except Exception as e:
+        logger.error(f"❌ خطأ في جلب التقارير: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': 'خطأ في جلب التقارير'
         }), 500
 
 @app.route('/lectures')
@@ -380,13 +451,13 @@ def get_lectures():
         return jsonify({
             'status': 'success',
             'data': lectures_data
-        })
+        }), 200
     
     except Exception as e:
-        logger.error(f"خطأ في جلب المحاضرات: {str(e)}")
+        logger.error(f"❌ خطأ في جلب المحاضرات: {str(e)}")
         return jsonify({
             'status': 'error',
-            'message': f'خطأ: {str(e)}'
+            'message': 'خطأ في جلب المحاضرات'
         }), 500
 
 @app.route('/health')
@@ -396,9 +467,9 @@ def health_check():
         'status': 'healthy',
         'loaded_encodings': len(known_face_encodings),
         'timestamp': datetime.now().isoformat()
-    })
+    }), 200
 
-# ============== معالجات الأخطاء ==============
+# ============== معالجات طلبات أخرى ==============
 
 @app.before_request
 def before_request():
@@ -410,14 +481,27 @@ def after_request(response):
     """معالج بعد كل طلب"""
     if hasattr(request, 'start_time'):
         duration = (datetime.now() - request.start_time).total_seconds()
-        logger.debug(f"الطلب استغرق {duration:.2f} ثانية")
+        logger.debug(f"⏱️  الطلب استغرق {duration:.2f} ثانية")
     
     response.headers['Content-Type'] = 'application/json; charset=utf-8'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    
     return response
 
+@app.teardown_appcontext
+def teardown_db(exception=None):
+    """تنظيف الموارد عند إغلاق التطبيق"""
+    DatabasePool.close_all()
+
+# ============== نقطة الدخول الرئيسية ==============
+
 if __name__ == '__main__':
-    logger.info("جاري بدء التطبيق...")
-    logger.info(f"عدد البصمات المحملة: {len(known_face_encodings)}")
+    logger.info("="*50)
+    logger.info("🚀 جاري بدء التطبيق...")
+    logger.info(f"📊 عدد البصمات المحملة: {len(known_face_encodings)}")
+    logger.info("="*50)
     
     app.run(
         debug=Config.DEBUG,
